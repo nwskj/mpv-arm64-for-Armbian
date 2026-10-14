@@ -1,0 +1,73 @@
+name: Build mpv arm64 for Armbian
+run-name: Build mpv aarch64 minimal
+on:
+  workflow_dispatch: # 手动触发
+  # push:
+  #   branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install cross compile toolchain & minimal build deps
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            crossbuild-essential-arm64 \
+            meson ninja-build pkg-config git \
+            libfdk-aac-dev:arm64 libass-dev:arm64 \
+            libplacebo-dev:arm64 libdrm-dev:arm64 \
+            libavcodec-dev:arm64 libavformat-dev:arm64 libavutil-dev:arm64 \
+            libswscale-dev:arm64 liblua5.4-dev:arm64
+
+      - name: Clone mpv source
+        run: |
+          git clone --depth=1 https://github.com/mpv-player/mpv.git
+          cd mpv
+
+      - name: Meson setup cross compile for aarch64
+        run: |
+          cat > crossfile.txt <<'EOF'
+          [binaries]
+          c = 'aarch64-linux-gnu-gcc'
+          cpp = 'aarch64-linux-gnu-g++'
+          ar = 'aarch64-linux-gnu-ar'
+          pkgconfig = 'aarch64-linux-gnu-pkg-config'
+          [host_machine]
+          system = 'linux'
+          cpu_family = 'aarch64'
+          cpu = 'arm64'
+          endian = 'little'
+          EOF
+
+          cd mpv
+          meson setup build --cross-file crossfile.txt \
+            -Dlibmpv=false \
+            -Dcplayer=true \
+            -Dvo=drm \
+            -Davfoundation=disabled -Dx11=disabled -Dwayland=disabled \
+            -Dsdl=disabled -Dgl=disabled -Dvulkan=disabled \
+            -Djack=disabled -Dalsa=enabled -Dpulse=disabled \
+            -Dlibarchive=disabled -Dcaca=disabled -Ddvbin=disabled \
+            -Ddvdnav=disabled -Ddvdread=disabled -Duchardet=disabled \
+            -Djavascript=disabled -Dlua=enabled
+
+      - name: Build mpv
+        run: |
+          cd mpv
+          ninja -C build
+
+      - name: Copy binary
+        run: |
+          mkdir -p output
+          cp mpv/build/mpv output/mpv-armbian-arm64
+          chmod +x output/mpv-armbian-arm64
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpv-armbian-arm64
+          path: output/mpv-armbian-arm64
